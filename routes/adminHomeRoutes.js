@@ -8,6 +8,7 @@ import {
   PopularCity,
   JobsByRegion
 } from "../models/HomeSection.js";
+import Task from "../models/Task.js";
 
 const router = express.Router();
 
@@ -171,78 +172,35 @@ router.get("/popular-cities", async (req, res) => {
   }
 });
 
-// Get jobs by region (all 16 regions)
-router.get("/jobs-by-region", async (req, res) => {
+
+
+// Helper function to get detailed category counts
+async function getCategoryCountsForRegion(regionName) {
   try {
-    const regions = await JobsByRegion.find({ isActive: true })
-      .sort({ order: 1 });
+    const categoryStats = await Task.aggregate([
+      { $match: { 
+        region: regionName,
+        status: "open" 
+      }},
+      { $group: {
+          _id: "$category",
+          count: { $sum: 1 }
+      }},
+      { $sort: { count: -1 } }
+    ]);
 
-    // If we don't have all 16 regions, create defaults
-    if (regions.length < 16) {
-      const allRegions = [
-        'Ashanti', 'Brong-Ahafo', 'Central', 'Eastern', 'Greater Accra',
-        'Northern', 'Upper East', 'Upper West', 'Volta', 'Western',
-        'Western North', 'Oti', 'Ahafo', 'Bono', 'Bono East', 'Savannah'
-      ];
-      
-      // Create missing regions
-      for (const regionName of allRegions) {
-        const exists = regions.find(r => r.region === regionName);
-        if (!exists) {
-          const newRegion = new JobsByRegion({
-            region: regionName,
-            order: regions.length,
-            isAutoCalculated: true
-          });
-          await newRegion.save();
-          regions.push(newRegion);
-        }
-      }
-      
-      // Re-fetch sorted
-      const sortedRegions = await JobsByRegion.find({ isActive: true })
-        .sort({ order: 1 });
-      regions = sortedRegions;
-    }
+    // Convert to object format
+    const categories = {};
+    categoryStats.forEach(stat => {
+      categories[stat._id] = stat.count;
+    });
 
-    // Get real-time stats for auto-calculated regions
-    const formattedRegions = await Promise.all(regions.map(async (region) => {
-      if (region.isAutoCalculated) {
-        const Task = mongoose.model('Task');
-        const tasks = await Task.find({ 
-          region: region.region,
-          status: 'open'
-        });
-        
-        // Count by category
-        const categories = {};
-        tasks.forEach(task => {
-          categories[task.category] = (categories[task.category] || 0) + 1;
-        });
-
-        return {
-          _id: region._id,
-          name: region.region,
-          totalJobs: tasks.length,
-          categories,
-          isAutoCalculated: true
-        };
-      } else {
-        return {
-          _id: region._id,
-          name: region.region,
-          totalJobs: region.manualJobCount || 0,
-          categories: region.manualCategories || {},
-          isAutoCalculated: false
-        };
-      }
-    }));
-
-    res.json({ success: true, regions: formattedRegions });
+    return categories;
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    console.error(`Error getting categories for ${regionName}:`, error);
+    return {};
   }
-});
+}
 
 // Get home page stats
 router.get("/stats", async (req, res) => {
@@ -727,38 +685,38 @@ router.post("/admin/popular-cities", adminAuth, async (req, res) => {
 });
 
 // Jobs by Region Admin CRUD
-router.get("/admin/jobs-by-region", adminAuth, async (req, res) => {
-  try {
-    const regions = await JobsByRegion.find().sort({ order: 1 });
+// router.get("/admin/jobs-by-region", adminAuth, async (req, res) => {
+//   try {
+//     const regions = await JobsByRegion.find().sort({ order: 1 });
     
-    // Ensure all 16 regions exist
-    const allRegions = [
-      'Ashanti', 'Brong-Ahafo', 'Central', 'Eastern', 'Greater Accra',
-      'Northern', 'Upper East', 'Upper West', 'Volta', 'Western',
-      'Western North', 'Oti', 'Ahafo', 'Bono', 'Bono East', 'Savannah'
-    ];
+//     // Ensure all 16 regions exist
+//     const allRegions = [
+//       'Ashanti', 'Brong-Ahafo', 'Central', 'Eastern', 'Greater Accra',
+//       'NorthernX', 'Upper East', 'Upper West', 'Volta', 'Western',
+//       'Western North', 'Oti', 'Ahafo', 'Bono', 'Bono East', 'Savannah'
+//     ];
     
-    // Check and create missing regions
-    for (const regionName of allRegions) {
-      const exists = regions.find(r => r.region === regionName);
-      if (!exists) {
-        const newRegion = new JobsByRegion({
-          region: regionName,
-          order: regions.length,
-          isAutoCalculated: true
-        });
-        await newRegion.save();
-        regions.push(newRegion);
-      }
-    }
+//     // Check and create missing regions
+//     for (const regionName of allRegions) {
+//       const exists = regions.find(r => r.region === regionName);
+//       if (!exists) {
+//         const newRegion = new JobsByRegion({
+//           region: regionName,
+//           order: regions.length,
+//           isAutoCalculated: true
+//         });
+//         await newRegion.save();
+//         regions.push(newRegion);
+//       }
+//     }
     
-    // Re-fetch sorted
-    const sortedRegions = await JobsByRegion.find().sort({ order: 1 });
-    res.json({ success: true, regions: sortedRegions });
-  } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
-  }
-});
+//     // Re-fetch sorted
+//     const sortedRegions = await JobsByRegion.find().sort({ order: 1 });
+//     res.json({ success: true, regions: sortedRegions });
+//   } catch (error) {
+//     res.status(500).json({ success: false, message: error.message });
+//   }
+// });
 
 router.put("/admin/jobs-by-region/:id", adminAuth, async (req, res) => {
   try {

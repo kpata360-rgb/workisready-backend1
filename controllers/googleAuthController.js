@@ -2,6 +2,7 @@
 import { OAuth2Client } from "google-auth-library";
 import jwt from "jsonwebtoken";
 import User from "../models/User.js";
+import bcrypt from "bcryptjs";
 
 // Initialize Google OAuth client
 const client = new OAuth2Client(
@@ -25,23 +26,52 @@ export const googleAuth = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    const { email, name, picture } = payload;
+    const { email, name, picture, sub:googleId } = payload;
 
     if (!email) {
       return res.status(400).json({ message: "Google account has no email" });
     }
 
     // ✅ Check if user exists
-    let user = await User.findOne({ email });
+    let user = await User.findOne({ 
+      $or: [{email }, { googleId }] });
+
+      //generate random password for google users.
 
     // ✅ Auto-register if not found
     if (!user) {
+      const randomPassword = Math.random().toString(36).slice(-8) + 
+                             Math.random().toString(36).slice(-8);
+
+
       user = await User.create({
         name,
         email,
         profileImage: picture,
+        isVerified: true,
         authProvider: "google",
+        password: randomPassword,
       });
+
+    console.log("New Google user created and auto-verified:", email);
+    
+    } else {
+      //Update existing user
+      if (!user.googleId) {
+        user.googleId = googleId;
+      }
+      if (!user.profileImage && picture) {
+        user.profileImage = picture;
+      }
+
+      if (!user.isVerified){
+        user.isVerified = true;
+        console.log("Auto-verified existing Google user:", email);
+      }
+
+      user.authProvider = "google";
+      await user.save();
+      console.log("Existing Google user updated:", email);
     }
 
     // ✅ Generate JWT (same as your normal login)
@@ -64,6 +94,7 @@ export const googleAuth = async (req, res) => {
         region: user.region,
         location: user.location,
         isApproved: user.isApproved,
+        isVerified: user.isVerified,
       },
     });
 
@@ -116,27 +147,52 @@ export const googleAuthCallback = async (req, res) => {
     });
 
     const payload = ticket.getPayload();
-    const { email, name, picture } = payload;
+    const { email, name, picture, sub: googleId } = payload;
 
     if (!email) {
       return res.status(400).json({ message: "Google account has no email" });
     }
 
     // Check if user exists
-    let user = await User.findOne({ email });
+    let user = await User.findOne({
+      $or: [{ email }, { googleId }]
+    });
 
     // Auto-register if not found
     if (!user) {
+
+      const randomPassword = Math.random().toString(36).slice(-8) + 
+                            Math.random().toString(36).slice(-8);
+
       user = await User.create({
         name,
         email,
         profileImage: picture,
         authProvider: "google",
+        isVerified: true,
+        password: randomPassword,
       });
       console.log("👤 New user created via Google OAuth:", email);
     } else {
+       // Update existing user
+      if (!user.googleId) {
+        user.googleId = googleId;
+      }
+      if (!user.profileImage && picture) {
+        user.profileImage = picture;
+      }
+      
+      // ✅ IMPORTANT: Ensure Google users are verified
+      if (!user.isVerified) {
+        user.isVerified = true;
+        console.log("✅ Auto-verified existing user during Google OAuth:", email);
+      }
+      
+      user.authProvider = "google";
+      await user.save();
       console.log("👤 Existing user logged in via Google OAuth:", email);
     }
+
 
     // Generate JWT token
     const jwtToken = jwt.sign(
@@ -156,6 +212,7 @@ export const googleAuthCallback = async (req, res) => {
       region: user.region || '',
       location: user.location || '',
       isApproved: user.isApproved || false,
+      isVerified: user.isVerified,
     };
 
     console.log("✅ Google OAuth successful for:", email);
@@ -192,7 +249,6 @@ export const googleAuthCallback = async (req, res) => {
   }
 };
 
-// ✅ Export other auth functions (make sure to add your existing ones)
 // If you have registerUser and loginUser in this same file, export them too
 export const registerUser = async (req, res) => {
   // Your existing registerUser code here
@@ -250,5 +306,61 @@ export const loginUser = async (req, res) => {
   }
 };
 
+// ✅ Add this new endpoint for manual verification if needed
+export const verifyGoogleUser = async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Email is required" 
+      });
+    }
+    
+    const user = await User.findOne({ email, authProvider: "google" });
+    
+    if (!user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Google user not found" 
+      });
+    }
+    
+    // Force verify Google user
+    if (!user.isVerified) {
+      user.isVerified = true;
+      await user.save();
+      
+      return res.json({
+        success: true,
+        message: "Google user verified successfully",
+        user: {
+          id: user._id,
+          email: user.email,
+          isVerified: user.isVerified,
+        },
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: "User is already verified",
+      user: {
+        id: user._id,
+        email: user.email,
+        isVerified: user.isVerified,
+      },
+    });
+    
+  } catch (error) {
+    console.error("Verify Google user error:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
+  }
+};
+
 // If you're using default export (check your existing code)
-// export default { registerUser, loginUser, googleAuth, googleAuthCallback };

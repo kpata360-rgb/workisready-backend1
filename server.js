@@ -20,6 +20,7 @@ import adminUserRoutes from "./routes/admin/users.js";
 import adminHomeRoutes from "./routes/adminHomeRoutes.js";
 import adminProviderRoutes from "./routes/admin/providerRoutes.js";
 import adminTaskRoutes from "./routes/admin/taskRoutes.js";
+import regionRoutes from "./routes/regionRoutes.js";
 
 
 // Load environment variables
@@ -32,10 +33,34 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Middleware
+const allowedOrigins = [
+  process.env.BASE_URL,           // localhost:5173
+  "https://africamails.com/workisready",        // Vite
+  "http://localhost:5174",        // alt Vite
+  "http://localhost:5173",          //locall
+  "http://10.0.2.2:5173",         // Android emulator → web
+  "http://10.0.2.2:5000",         // Android emulator → backend
+  "http://localhost",             // RN iOS
+  "https://africamails.com",          // Your frontend domain
+  "https://www.africamails.com",      // WWW version
+  "http://localhost:5000",             // Backend (for testing)
+].filter(Boolean);
+
 app.use(cors({
-  origin: [`${BASE_URL}`, "http://localhost:5174" || "http://10.0.2.2:5000"],
+  origin: (origin, callback) => {
+    // Allow server-to-server & mobile apps (no origin header)
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.warn("Blocked by CORS:", origin);
+    callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
 }));
+
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -71,6 +96,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/providers", providerRoutes);
 app.use("/api/saved-workers", savedWorkerRoutes);
 app.use("/api/reviews", reviewRoutes);
+app.use("/api/regions", regionRoutes);
 
 
 

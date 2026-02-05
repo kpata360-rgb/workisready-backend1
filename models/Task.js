@@ -30,6 +30,10 @@ const taskSchema = new mongoose.Schema({
     type: String,
     default: ""
   },
+  district: {
+    type: String,
+    default: ""
+  },
   // Keep for backward compatibility
   location: {
     type: String,
@@ -76,6 +80,15 @@ const taskSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  status: {
+    type: String,
+    enum: ['open', 'completed'],
+    default: 'open'
+  },
+  completedAt: {
+      type: Date,
+      default: null,
+    },
   updatedAt: {
     type: Date,
     default: Date.now
